@@ -1,5 +1,5 @@
-// script.js — MuseMap core functionality (commit 2)
-// Features: generate nodes from seed, render, drag, edit
+// script.js — MuseMap with persistence (commit 3)
+// Adds autosave, manual save/load, lastSaved display
 (() => {
   // DOM refs
   const seedInput = document.getElementById('seedInput');
@@ -37,7 +37,7 @@
       this.y = y;
       this.vx = 0;
       this.vy = 0;
-      this.r = Math.max(36, 10 + text.length * 6);
+      this.r = Math.max(36, 10 + (text ? text.length * 6 : 0));
       this.color = color;
     }
   }
@@ -47,6 +47,7 @@
   let dragging = null;
   let offset = { x: 0, y: 0 };
   let hoverNode = null;
+  let autosaveTimer = null;
 
   // Utilities
   const COLORS = ['#7c5cff', '#4ce0c4', '#ff9aa2', '#ffd97a', '#6be7ff'];
@@ -117,7 +118,7 @@
   }
 
   function wrapText(text, maxWidth, ctxRef) {
-    const words = text.split(/\s+/);
+    const words = (text || '').split(/\s+/);
     const lines = [];
     let cur = '';
     for (let w of words) {
@@ -175,9 +176,9 @@
     // damping & constraints
     const rect = canvas.getBoundingClientRect();
     nodes.forEach(n => {
-      // simple easing to center if not dragging
-      n.x += (Math.max(60, rect.width / 2) - n.x) * 0.002; // subtle
-      n.y += (Math.max(60, rect.height / 2) - n.y) * 0.002;
+      // subtle center pull (very light)
+      n.x += (rect.width / 2 - n.x) * 0.002;
+      n.y += (rect.height / 2 - n.y) * 0.002;
       // clamp
       n.x = Math.max(n.r + 6, Math.min(rect.width - n.r - 6, n.x));
       n.y = Math.max(n.r + 6, Math.min(rect.height - n.r - 6, n.y));
@@ -221,6 +222,7 @@
     if (dragging) {
       dragging.x = pos.x - offset.x;
       dragging.y = pos.y - offset.y;
+      scheduleAutosave();
     }
   });
 
@@ -229,7 +231,7 @@
   });
 
   canvas.addEventListener('dblclick', (e) => {
-    // edit node text (prompt for simplicity)
+    // edit node text (prompt)
     const pos = getMousePos(e);
     const target = nodes.find(n => {
       const dx = pos.x - n.x, dy = pos.y - n.y;
@@ -239,6 +241,7 @@
       const newText = prompt('Edit node text:', target.text);
       if (newText !== null) {
         target.text = newText.trim() || target.text;
+        scheduleAutosave();
         updateCounts();
       }
     }
@@ -252,21 +255,18 @@
     const root = new Node(`n0`, base, 0, 0, randomColor(0));
     nodes.push(root);
 
-    // produce 6-9 child nodes by mixing affixes, synonyms-like tokens, adjectives
+    // produce 6-9 child nodes by mixing affixes, verbs, adjectives
     const suffixes = ['Lab', 'Flow', 'Map', 'Drop', 'Seed', 'Spark', 'Scope', 'Nest', 'Wave'];
     const verbs = ['plan', 'find', 'build', 'dream', 'sketch', 'shape', 'grow', 'trace'];
     const adjectives = ['bright', 'calm', 'wild', 'tiny', 'bold', 'clear', 'urban'];
 
     const pool = [];
-    // mix strategies
     for (let i = 0; i < suffixes.length; i++) pool.push(`${capitalize(base)} ${suffixes[i]}`);
     for (let v of verbs) pool.push(`${v} ${base}`);
     for (let a of adjectives) pool.push(`${capitalize(a)} ${base}`);
-    // add some fragmentations
     const fragments = base.match(/.{1,4}/g) || [base];
     fragments.forEach((f, i) => pool.push(`${f}${i}`));
 
-    // unique selection
     const count = Math.min(9, Math.max(5, Math.floor(rand(5, 9))));
     const chosen = shuffle(pool).slice(0, count);
 
@@ -287,6 +287,7 @@
     });
 
     updateCounts();
+    scheduleAutosave(700);
   }
 
   function shuffle(arr) {
@@ -306,6 +307,77 @@
     nodeCount.textContent = nodes.length;
   }
 
+  // Persistence (localStorage)
+  const STORAGE_KEY = 'muse-map-v1';
+
+  function saveToLocal(askConfirm = true) {
+    try {
+      if (askConfirm && !confirm('Save current map to local storage? This will overwrite previous saved map.')) return;
+      const payload = {
+        nodes: nodes.map(n => ({ id: n.id, text: n.text, x: n.x, y: n.y, color: n.color })),
+        links: links.slice(),
+        savedAt: Date.now()
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      setLastSaved(payload.savedAt);
+      alert('Saved to local storage.');
+    } catch (err) {
+      console.error(err);
+      alert('Could not save map.');
+    }
+  }
+
+  function loadFromLocal() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) {
+        alert('No saved map found.');
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      nodes = parsed.nodes.map(n => new Node(n.id, n.text, n.x, n.y, n.color || randomColor()));
+      links = parsed.links || [];
+      updateCounts();
+      if (parsed.savedAt) setLastSaved(parsed.savedAt);
+      alert('Loaded saved map.');
+    } catch (err) {
+      console.error(err);
+      alert('Could not load map.');
+    }
+  }
+
+  function setLastSaved(ts) {
+    const d = ts ? new Date(ts) : null;
+    lastSaved.textContent = d ? d.toLocaleString() : '—';
+  }
+
+  function clearSaved() {
+    if (!confirm('Clear saved map from localStorage?')) return;
+    localStorage.removeItem(STORAGE_KEY);
+    setLastSaved(null);
+    alert('Saved map removed.');
+  }
+
+  // autosave scheduling to avoid too many writes
+  function scheduleAutosave(delay = 1200) {
+    if (autosaveTimer) clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(() => {
+      // auto-save silently (no confirm)
+      try {
+        const payload = {
+          nodes: nodes.map(n => ({ id: n.id, text: n.text, x: n.x, y: n.y, color: n.color })),
+          links: links.slice(),
+          savedAt: Date.now()
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+        setLastSaved(payload.savedAt);
+      } catch (e) {
+        console.warn('Autosave failed', e);
+      }
+      autosaveTimer = null;
+    }, delay);
+  }
+
   // wire generate button
   generateBtn.addEventListener('click', () => {
     const seed = seedInput.value.trim();
@@ -316,9 +388,9 @@
     generateFromSeed(seed);
   });
 
-  // minimal export / import helpers (real saving added in next commit)
+  // export / import
   exportBtn.addEventListener('click', () => {
-    const data = JSON.stringify({ nodes, links }, null, 2);
+    const data = JSON.stringify({ nodes: nodes.map(n => ({ id: n.id, text: n.text, x: n.x, y: n.y, color: n.color })), links }, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -340,6 +412,8 @@
           nodes = parsed.nodes.map(n => new Node(n.id, n.text, n.x, n.y, n.color || randomColor()));
           links = parsed.links.slice();
           updateCounts();
+          scheduleAutosave(400);
+          alert('Imported map.');
         } else {
           alert('Invalid file.');
         }
@@ -351,13 +425,36 @@
     ev.target.value = '';
   });
 
-  // placeholders for save/load buttons (persistence implemented next commit)
-  saveBtn.addEventListener('click', () => {
-    alert('Save to localStorage will be implemented in the next commit.');
+  // wire save/load/clear
+  saveBtn.addEventListener('click', () => saveToLocal(true));
+  loadBtn.addEventListener('click', () => loadFromLocal());
+
+  // add context menu (right click) to clear saved map
+  window.addEventListener('contextmenu', (e) => {
+    // if user right-clicks sidebar area? Instead we allow ctrl+right click to clear saved
+    // keep default behavior otherwise
+    // If user holds ctrl and right-click, clear saved
+    if (e.ctrlKey) {
+      e.preventDefault();
+      clearSaved();
+    }
   });
-  loadBtn.addEventListener('click', () => {
-    alert('Load from localStorage will be implemented in the next commit.');
-  });
+
+  // try restore on startup (silent)
+  (function tryRestoreOnStart() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        nodes = parsed.nodes.map(n => new Node(n.id, n.text, n.x, n.y, n.color || randomColor()));
+        links = parsed.links || [];
+        updateCounts();
+        if (parsed.savedAt) setLastSaved(parsed.savedAt);
+      }
+    } catch (err) {
+      console.warn('Could not restore on start', err);
+    }
+  })();
 
   // start loop
   loop();
