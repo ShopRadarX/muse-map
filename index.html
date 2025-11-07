@@ -6,15 +6,15 @@
   <title>MuseMap — instant visual idea map</title>
   <style>
     :root {
-      --bg: #0f1724;
-      --card: #0b1220;
+      --bg: #071328;
+      --card: rgba(10,15,25,0.7);
       --accent: #7c5cff;
       --muted: #9aa4b2;
-      --glass: rgba(255,255,255,0.04);
+      --glass: rgba(255,255,255,0.03);
       --radius: 14px;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
     }
-    html,body { height:100%; margin:0; background:linear-gradient(180deg,#071025 0%, var(--bg) 100%); color:white; }
+    html,body { height:100%; margin:0; background:linear-gradient(180deg,#041221 0%, var(--bg) 100%); color:white; }
     .app {
       display:grid;
       grid-template-columns: 1fr 320px;
@@ -32,10 +32,10 @@
     }
     .brand { display:flex; gap:12px; align-items:center; }
     .logo {
-      width:44px; height:44px; border-radius:10px;
+      width:48px; height:48px; border-radius:12px;
       background:linear-gradient(135deg,var(--accent), #4ce0c4);
-      display:flex; align-items:center; justify-content:center; font-weight:700;
-      box-shadow: 0 6px 20px rgba(124,92,255,0.18);
+      display:flex; align-items:center; justify-content:center; font-weight:800;
+      box-shadow: 0 12px 40px rgba(124,92,255,0.16); font-size:1.2rem;
     }
     .title { font-size:1.05rem; letter-spacing:0.2px; }
     .panel {
@@ -44,6 +44,7 @@
       border-radius:var(--radius);
       box-shadow: 0 8px 30px rgba(2,6,23,0.6);
       border: 1px solid rgba(255,255,255,0.03);
+      backdrop-filter: blur(4px);
     }
     .left {
       min-height:0;
@@ -54,7 +55,8 @@
     .canvas-wrap {
       position:relative;
       flex:1;
-      min-height:300px;
+      min-height:360px;
+      display:flex; flex-direction:column;
     }
     canvas#mapCanvas {
       width:100%;
@@ -65,19 +67,30 @@
     }
     .controls { display:flex; gap:8px; align-items:center; }
     input[type="text"] {
-      background:var(--glass); border:1px solid rgba(255,255,255,0.03);
-      padding:10px 12px; border-radius:10px; color:var(--muted); outline:none; min-width:200px;
+      background:transparent; border:1px solid rgba(255,255,255,0.06);
+      padding:10px 12px; border-radius:10px; color:white; outline:none; min-width:220px;
+      box-shadow: inset 0 2px 6px rgba(0,0,0,0.35);
     }
+    input::placeholder { color: rgba(255,255,255,0.45); font-weight:500; }
     button {
-      padding:10px 12px; border-radius:10px; border:0; cursor:pointer; font-weight:600;
+      padding:10px 12px; border-radius:10px; border:0; cursor:pointer; font-weight:700;
       background:linear-gradient(90deg,var(--accent),#4ce0c4); color:#02121a;
-      box-shadow: 0 8px 20px rgba(124,92,255,0.12);
+      box-shadow: 0 10px 26px rgba(124,92,255,0.12);
     }
     .sidebar { display:flex; flex-direction:column; gap:12px; }
-    .meta { color:var(--muted); font-size:0.9rem; }
+    .meta { color:var(--muted); font-size:0.92rem; }
     .small { font-size:0.85rem; color:var(--muted); }
     .node-info { display:flex; gap:8px; align-items:center; justify-content:space-between; }
     footer { grid-column:1 / -1; text-align:center; font-size:0.85rem; color:var(--muted); margin-top:6px; }
+
+    /* responsive */
+    @media (max-width:920px) {
+      .app { grid-template-columns: 1fr; padding:18px; }
+      .sidebar { order:3; }
+      header { flex-direction:column; align-items:flex-start; gap:12px; }
+    }
+
+    .hint { color:var(--muted); font-size:0.82rem; margin-top:8px; }
   </style>
 </head>
 <body>
@@ -87,23 +100,24 @@
         <div class="logo">M</div>
         <div>
           <div class="title">MuseMap</div>
-          <div class="small">Generate quick idea maps from a seed word</div>
+          <div class="small">Generate quick idea maps from a seed — local only</div>
         </div>
       </div>
       <div class="panel controls">
         <input id="seedInput" type="text" placeholder="Enter a seed word (e.g., travel)" />
         <button id="generateBtn">Generate</button>
-        <button id="saveBtn">Save</button>
-        <button id="loadBtn">Load</button>
+        <button id="saveBtn" title="Save to localStorage">Save</button>
+        <button id="loadBtn" title="Load from localStorage">Load</button>
       </div>
     </header>
 
     <main class="left">
       <div class="panel canvas-wrap">
         <canvas id="mapCanvas"></canvas>
+        <div class="hint">Double click a node to edit. Drag nodes to rearrange. Ctrl + right click to clear saved map.</div>
       </div>
       <div class="panel small meta">
-        Click a node to edit text. Drag nodes to rearrange. Maps are saved to local storage.
+        Click a node (double click) to edit text. The map auto-saves after changes. Export/Import to share.
       </div>
     </main>
 
